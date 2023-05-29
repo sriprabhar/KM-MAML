@@ -293,6 +293,120 @@ class UnetKernelModulationNetworkEncDecSmallest(nn.Module):
         return down_mod_weights, latentmodulationweight,up_mod_weights
 
 
+class UnetKernelModulationNetworkEncDecSmallestWithBottleneck(nn.Module):
+    def __init__(self,contextvectorsize,in_chans, out_chans, chans, num_pool_layers):
+        super(UnetKernelModulationNetworkEncDecSmallestWithBottleneck,self).__init__()
+        
+        self.num_pool_layers = num_pool_layers
+        
+        self.alpha_down = nn.ModuleList()
+        self.beta_down = nn.ModuleList()
+        
+        self.alpha_latent = nn.ModuleList()
+        self.beta_latent = nn.ModuleList()
+
+        self.alpha_up = nn.ModuleList()
+        self.beta_up = nn.ModuleList()
+        
+        self.alpha_down += [nn.Sequential(nn.Linear(contextvectorsize,8),nn.Linear(8,in_chans))]
+        self.beta_down += [nn.Sequential(nn.Linear(contextvectorsize,8),nn.Linear(8,chans))]
+        
+        ch = chans
+        
+        for i in range(num_pool_layers - 1):
+            self.alpha_down += [nn.Sequential(nn.Linear(contextvectorsize,8),nn.Linear(8,ch))]
+            self.beta_down += [nn.Sequential(nn.Linear(contextvectorsize,8),nn.Linear(8,ch*2))]
+            ch *= 2
+            
+        self.alpha_latent += [nn.Sequential(nn.Linear(contextvectorsize,8),nn.Linear(8,ch))]
+        self.beta_latent += [nn.Sequential(nn.Linear(contextvectorsize,8),nn.Linear(8,ch))]
+        
+        for i in range(num_pool_layers - 1):
+            self.alpha_up += [nn.Sequential(nn.Linear(contextvectorsize,8),nn.Linear(8,ch*2))]
+            self.beta_up += [nn.Sequential(nn.Linear(contextvectorsize,8),nn.Linear(8,ch//2))]
+            ch //= 2
+        
+        self.alpha_up += [nn.Sequential(nn.Linear(contextvectorsize,8),nn.Linear(8,ch*2))]
+        self.beta_up += [nn.Sequential(nn.Linear(contextvectorsize,8),nn.Linear(8,ch))]
+
+        
+    def forward(self, gamma_val):
+        down_mod_weights=[]
+        up_mod_weights = []
+
+        for i in range(self.num_pool_layers):
+            alphadown = self.alpha_down[i](gamma_val)            
+            betadown = self.beta_down[i](gamma_val)
+            downmodulationweight = torch.matmul(torch.t(betadown),alphadown)
+            down_mod_weights.append(downmodulationweight.unsqueeze(2).unsqueeze(3))        
+        
+        alphalatent = self.alpha_latent[0](gamma_val)      
+        betalatent = self.beta_latent[0](gamma_val)
+        latentmodulationweight = torch.matmul(torch.t(betalatent),alphalatent) 
+        latentmodulationweight = latentmodulationweight.unsqueeze(2).unsqueeze(3)
+        
+        for i in range(self.num_pool_layers):
+            alphaup = self.alpha_up[i](gamma_val)            
+            betaup = self.beta_up[i](gamma_val)
+            upmodulationweight = torch.matmul(torch.t(betaup),alphaup)
+            up_mod_weights.append(upmodulationweight.unsqueeze(2).unsqueeze(3))
+            
+        return down_mod_weights, latentmodulationweight,up_mod_weights
+    
+    def adaptation(self,gamma_val, weights):
+        down_mod_weights=[]
+        up_mod_weights = []        
+        alphadownlist = []
+        betadownlist = []
+
+        for i in range(0,self.num_pool_layers): 
+
+            alphadown_interm = F.linear(gamma_val,weights[4*i],weights[(4*i)+1])
+            alphadown = F.linear(alphadown_interm,weights[(4*i)+2],weights[(4*i)+3])
+            alphadownlist.append(alphadown)
+        
+        downindex = self.num_pool_layers*2*2
+        
+        for i in range(0,self.num_pool_layers):       
+            betadown = F.linear(F.linear(gamma_val,weights[downindex + (4*i)],weights[(downindex + (4*i))+1]), 
+                                weights[downindex + (4*i)+2],weights[(downindex + (4*i))+3])
+            betadownlist.append(betadown)
+        
+        for i in range(0,self.num_pool_layers):  
+            downmodulationweight = torch.matmul(torch.t(betadownlist[i]),alphadownlist[i])
+            down_mod_weights.append(downmodulationweight.unsqueeze(2).unsqueeze(3))
+        
+        latentindex = downindex + self.num_pool_layers*2*2
+        
+        alphalatent = F.linear(F.linear(gamma_val,weights[latentindex],weights[latentindex+1]),weights[latentindex+2],weights[latentindex+3])
+        betalatent = F.linear(F.linear(gamma_val,weights[latentindex+4],weights[latentindex+5]),weights[latentindex+6],weights[latentindex+7])
+                                                                                                          
+        latentmodulationweight = torch.matmul(torch.t(betalatent),alphalatent) 
+        latentmodulationweight = latentmodulationweight.unsqueeze(2).unsqueeze(3)
+        upindex = 4*2 + latentindex
+        alphauplist = []
+        betauplist = []
+        
+        for i in range(0,self.num_pool_layers):       
+            alphaup = F.linear(F.linear(gamma_val,weights[upindex + (4*i)],weights[(upindex + (4*i))+1]),
+                               weights[upindex + (4*i)+2],weights[(upindex + (4*i))+3])
+            alphauplist.append(alphaup)
+        
+        upindex = upindex + (self.num_pool_layers*2*2)
+        
+        for i in range(0,self.num_pool_layers):       
+            betaup = F.linear(F.linear(gamma_val,weights[upindex + (4*i)],weights[(upindex + (4*i))+1]),
+                              weights[upindex + (4*i)+2],weights[(upindex + (4*i))+3])
+            betauplist.append(betaup)
+            
+        for i in range(0,self.num_pool_layers):  
+            upmodulationweight = torch.matmul(torch.t(betauplist[i]),alphauplist[i])
+            up_mod_weights.append(upmodulationweight.unsqueeze(2).unsqueeze(3))
+        
+        return down_mod_weights, latentmodulationweight,up_mod_weights
+
+
+
 class UnetMACReconNetEncDecKM(nn.Module):
     def __init__(self, args, in_chans, out_chans, chans, num_pool_layers, drop_prob):
         super().__init__()

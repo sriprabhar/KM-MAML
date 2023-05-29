@@ -408,7 +408,8 @@ def save_model(args, exp_dir, epoch, model, optimizer,best_dev_loss,is_new_best,
 def build_model(args):
     
     basemodel = UnetMACReconNetEncDecKM(args, in_chans=1, out_chans=1, chans=32, num_pool_layers=3, drop_prob=0.0).to(args.device).double()
-    km_model = UnetKernelModulationNetworkEncDecSmallest(contextvectorsize=256,in_chans=1, out_chans=1, chans=32,num_pool_layers=3).to(args.device).double() # double to make the weights in double since input type is double 
+    #km_model = UnetKernelModulationNetworkEncDecSmallest(contextvectorsize=256,in_chans=1, out_chans=1, chans=32,num_pool_layers=3).to(args.device).double() # double to make the weights in double since input type is double 
+    km_model = UnetKernelModulationNetworkEncDecSmallestWithBottleneck(contextvectorsize=256,in_chans=1, out_chans=1, chans=32,num_pool_layers=3).to(args.device).double() # double to make the weights in double since input type is double 
     task_enc_checkpointfile = args.disentangle_model_path
     task_enc_checkpoint = torch.load(task_enc_checkpointfile)
     task_encoder = UnetModel(in_chans=1, out_chans=1, chans=32,num_pool_layers=3,drop_prob=0.0).to(args.device).double()
