@@ -646,7 +646,7 @@ def main(args):
         #scheduler.step(current_epoch)
         if args.training_style == "sgd":
 
-            per_epoch_train_meta_loss,per_epoch_train_time = maml_train_epoch(args,current_epoch,model,train_task_loader,train_support_dataset,train_query_dataset,train_support_task_index,train_query_task_index,meta_optimizer,writer)
+            per_epoch_train_meta_loss,per_epoch_train_time = sgd_train_epoch(args,current_epoch,model,train_task_loader,train_support_dataset,train_query_dataset,train_support_task_index,train_query_task_index,meta_optimizer,writer)
             avg_train_qry_loss.append(per_epoch_train_meta_loss)
             if args.adaptation_flag_for_sgd_validation_data == 'True':
                 per_epoch_unadapted_val_meta_loss,per_epoch_adapted_val_meta_loss,per_epoch_val_time = sgd_validate_w_adaptation(args,current_epoch,model,val_task_loader,val_support_dataset,val_query_dataset,val_support_task_index,val_query_task_index,writer)
